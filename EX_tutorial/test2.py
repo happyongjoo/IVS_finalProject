@@ -6,7 +6,7 @@ picam2 = Picamera2()
 # rpicam-hello와 비슷한 preview 설정 (ISP 거친 RGB888)
 config = picam2.create_preview_configuration(
     main={
-        "size": (1280, 720),   # 필요에 따라 조절 가능
+        "size": (640, 480),   # 필요에 따라 조절 가능
         "format": "RGB888"     # ISP에서 나온 순수 RGB
     }
 )
