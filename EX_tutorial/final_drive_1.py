@@ -20,16 +20,16 @@ MOTOR_ENABLE_PIN = 23
 BASE_SPEED = 0.4
 
 # 주행
-K_ANGLE = 2.0                    # 선형 매핑 게인
+K_ANGLE = 3.0                    # 선형 매핑 게인
 
 MAX_LANE_ANGLE = 60.0            # fitLine 클램핑 기준
-HARD_TURN_THRESHOLD = 40.0       # ±45도 넘으면 최대 조향
+HARD_TURN_THRESHOLD = 45.0       # ±45도 넘으면 최대 조향
 
 ROI_TOP_RATIO = 0.5
 
 # 횡단보도
 STOP_TIME = 4.0  # 정지 시간 (초)
-BLIND_RUN_TIME = 2.0  # 탈출 직진 시간 (초)
+BLIND_RUN_TIME = 1.0  # 탈출 직진 시간 (초)
 CW_THRESHOLD = 14000
 
 src_points = np.float32([(80, 70), (0, 280), (640, 280), (560, 70)])
@@ -100,7 +100,7 @@ def get_lane_angle_split(mask):
     angle_left = fit_lane_angle_deg(left_roi)
     angle_right = fit_lane_angle_deg(right_roi)
 
-    # 🔴 차선 둘 다 없음 → None만 반환
+    # 차선 둘 다 없음 → None만 반환
     if angle_left is None and angle_right is None:
         return None
 
@@ -139,10 +139,40 @@ def Lane_Drive(result, servo, motor):
 
         servo.angle = SERVO_CENTER_ANGLE
         motor.stop()
+        
     return roi_top, side, lane_angle_deg, steering_angle
 
+# ============ Crosswalk ============
+def IsCrosswalk(hsv, servo, motor):
+    # RED 범위 설정 및 병합
+    lower_red1 = np.array([0, 100, 100])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 100, 100])
+    upper_red2 = np.array([180, 255, 255])
+            
+    CW_mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    CW_mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    CW_mask = cv2.addWeighted(CW_mask1, 1.0, CW_mask2, 1.0, 0.0)
+
+    # 빨간색 픽셀 개수 세기
+    CW_pixel_count = cv2.countNonZero(CW_mask)
+
+    # 판단 및 제어
+    if CW_pixel_count > CW_THRESHOLD:
+        print(f"Crosswalk ({CW_pixel_count}) -> Stop")
+        # 일단 정지
+        motor.stop()
+        time.sleep(STOP_TIME)
+
+        # 탈출
+        servo.angle = SERVO_CENTER_ANGLE
+        motor.forward(speed=BASE_SPEED)
+        time.sleep(BLIND_RUN_TIME)
+        
+    return CW_pixel_count
+                
 # ============ Debug ============
-def View_debug(bird_view, roi_top, side, lane_angle_deg, steering_angle, mask):
+def View_debug(bird_view, roi_top, side, lane_angle_deg, steering_angle, CW_pixel_count, mask):
     bev_debug = bird_view.copy()
     h, w = bev_debug.shape[:2]
 
@@ -153,7 +183,7 @@ def View_debug(bird_view, roi_top, side, lane_angle_deg, steering_angle, mask):
                 (10,60), cv2.FONT_HERSHEY_SIMPLEX, 0.7,(255,255,255),2)
     cv2.putText(bev_debug, f"steer: {steering_angle:.1f}",
                 (10,90), cv2.FONT_HERSHEY_SIMPLEX, 0.7,(255,255,255),2)
-
+    cv2.putText(bev_debug, f"Red Pixels: {CW_pixel_count}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
     cv2.imshow("Mask", mask)
     cv2.imshow("BEV Debug", bev_debug)
 
@@ -165,35 +195,11 @@ def main():
             frame = picam2.capture_array()
             # frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
             bird_view = cv2.warpPerspective(frame, M, (640, 480))
-            
             hsv = cv2.cvtColor(bird_view, cv2.COLOR_BGR2HSV)
             
             # ============ 횡단보도 ============
-            # RED 범위 설정 및 병합
-            lower_red1 = np.array([0, 100, 100])
-            upper_red1 = np.array([10, 255, 255])
-            lower_red2 = np.array([170, 100, 100])
-            upper_red2 = np.array([180, 255, 255])
-            
-            CW_mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-            CW_mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-            CW_mask = cv2.addWeighted(CW_mask1, 1.0, CW_mask2, 1.0, 0.0)
-
-            # 빨간색 픽셀 개수 세기
-            CW_pixel_count = cv2.countNonZero(CW_mask)
-
-            # 판단 및 제어
+            CW_pixel_count = IsCrosswalk(hsv, servo, motor)
             if CW_pixel_count > CW_THRESHOLD:
-                print(f"횡단보도 ({CW_pixel_count}) -> 정지")
-                # 일단 정지
-                motor.stop()
-                time.sleep(STOP_TIME)
-
-                # 탈출
-                servo.angle = SERVO_CENTER_ANGLE
-                motor.forward(speed=BASE_SPEED)
-                time.sleep(BLIND_RUN_TIME)
-
                 continue
             
             # ============ 차선 유지 ============
@@ -203,15 +209,15 @@ def main():
             roi_top, side, lane_angle_deg, steering_angle = Lane_Drive(result, servo, motor)
 
             # ============ 시각화 ============
-            View_debug(bird_view, roi_top, side, lane_angle_deg, steering_angle, L_mask)
+            View_debug(bird_view, roi_top, side, lane_angle_deg, steering_angle, CW_pixel_count, L_mask)
             
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     finally:
-        print("시스템 종료")
         motor.stop()
         motor.close()
         picam2.stop()
+        servo.angle = SERVO_CENTER_ANGLE
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
