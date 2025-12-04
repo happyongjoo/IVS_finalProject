@@ -17,9 +17,9 @@ SERVO_CENTER_ANGLE = 90
 K_ANGLE = 2.0                    # 선형 매핑 게인
 
 MAX_LANE_ANGLE = 60.0            # fitLine 클램핑 기준
-HARD_TURN_THRESHOLD = 45.0       # ±45도 넘으면 최대 조향
+HARD_TURN_THRESHOLD = 40.0       # ±45도 넘으면 최대 조향
 
-ROI_TOP_RATIO = 0.6
+ROI_TOP_RATIO = 0.5
 
 # =========================
 # 모터 파라미터
@@ -27,7 +27,7 @@ ROI_TOP_RATIO = 0.6
 MOTOR_FORWARD_PIN = 14
 MOTOR_BACKWARD_PIN = 15
 MOTOR_ENABLE_PIN = 23
-BASE_SPEED = 0.7
+BASE_SPEED = 0.4
 
 # ==================================
 # 차선 기울기 계산 함수
