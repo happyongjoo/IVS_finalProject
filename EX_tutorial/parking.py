@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import math
 from picamera2 import Picamera2
-from gpiozero import AngularServo, Motor
+from gpiozero import AngularServo, Motor, DistanceSensor
 import time
 
 # =========================
@@ -225,4 +225,5 @@ def parking(servo, motor):
 
     # 6. 종료
     print("Parking Completed")
+
     motor.stop()
