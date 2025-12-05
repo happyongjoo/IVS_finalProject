@@ -59,7 +59,7 @@ def parking_sequence(servo, motor):
     # 3. 후진 (1초)
     print("Reverse: 1.0 sec")
     motor.backward(BASE_SPEED)
-    time.sleep(1.0) # [시간 조절] 후진 시간
+    time.sleep(1.5) # [시간 조절] 후진 시간
 
     # 4. 정지 및 핸들 중앙 정렬
     motor.stop()
