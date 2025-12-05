@@ -58,8 +58,8 @@ def parking_sequence(servo, motor):
 
     # 3. 후진 (1초)
     print("Reverse: 1.0 sec")
-    motor.backward(BASE_SPEED)
-    time.sleep(1.0) # [시간 조절] 후진 시간
+    motor.backward(3.0)
+    time.sleep(2.0) # [시간 조절] 후진 시간
 
     # 4. 정지 및 핸들 중앙 정렬
     motor.stop()
@@ -70,7 +70,7 @@ def parking_sequence(servo, motor):
     # 5. 직진 주차 (주차칸 진입)
     print("Forward: Parking...")
     motor.backward(BASE_SPEED)
-    time.sleep(1.0) # [시간 조절] 직진 시간
+    time.sleep(0.7) # [시간 조절] 직진 시간
 
     # 6. 종료
     print("Parking Completed")
