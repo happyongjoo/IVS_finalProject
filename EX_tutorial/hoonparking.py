@@ -14,7 +14,7 @@ SERVO_CENTER_ANGLE = 90
 MOTOR_FORWARD_PIN = 14
 MOTOR_BACKWARD_PIN = 15
 MOTOR_ENABLE_PIN = 23
-BASE_SPEED = 0.4
+BASE_SPEED = 0.6
 
 # ===========================
 # Init 함수 (기존 형태 유지, 카메라 제외)
@@ -57,7 +57,7 @@ def parking_sequence(servo, motor):
     time.sleep(0.5) # 서보 반응 대기
     
     motor.forward(0.6)
-    time.sleep(0.5) # 서보 반응 대기
+    time.sleep(1.5) # 서보 반응 대기
 
     # 2. 핸들 왼쪽 최대 꺾기 (스티어링)
     print("Steering: Left MAX (0도)")
@@ -67,7 +67,7 @@ def parking_sequence(servo, motor):
     # 3. 후진 (1초)
     print("Reverse: 1.0 sec")
     motor.backward(0.6)
-    time.sleep(2.0) # [시간 조절] 후진 시간
+    time.sleep(1.5) # [시간 조절] 후진 시간
 
     # 4. 정지 및 핸들 중앙 정렬
     motor.stop()
