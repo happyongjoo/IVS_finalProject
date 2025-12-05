@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import time
 import math
+import final_parking
 
 from gpiozero import AngularServo, Motor
 
@@ -32,21 +33,13 @@ src_points = np.float32([(40, 50), (0, 280), (640, 280), (600, 50)])
 dst_points = np.float32([(0, 0), (0, 480), (640, 480), (640, 0)])
 
 # 로터리 
-LOWER_GREEN = np.array([40, 50, 50])
-UPPER_GREEN = np.array([90, 255, 255])
 GREEN_PIXEL_THRESHOLD = 300
+RED_PIXEL_THRESHOLD = 24000
+BLUE_PIXEL_THRESHOLD = 3000
 
 # 횡단보도
 STOP_TIME = 2.5  # 정지 시간 (초)
 BLIND_RUN_TIME = 1.0 # 탈출 직진 시간 (초)
-CW_THRESHOLD = 24000
-CW_Flag = 0
-lower_red1 = np.array([0, 100, 100])
-upper_red1 = np.array([10, 255, 255])
-lower_red2 = np.array([170, 100, 100])
-upper_red2 = np.array([180, 255, 255])
-
-
     
 # ============ Init ============
 def Init():
@@ -150,65 +143,69 @@ def Lane_Drive(result, servo, motor, current_roi_ratio):
         motor.stop()
     return roi_top, lane_angle_deg
 
-# ============ Rotary ============
-def IsRotary(hsv):
-    green_mask = cv2.inRange(hsv, LOWER_GREEN, UPPER_GREEN)
-    RT_pixel_count = cv2.countNonZero(green_mask)
+def Color_Define(hsv):
+    #=========== Color Define ============
+    LOWER_GREEN = np.array([40, 50, 50])
+    UPPER_GREEN = np.array([90, 255, 255])
+    GREEN_MASK = cv2.inRange(hsv, LOWER_GREEN, UPPER_GREEN)
+
+    LOWER_RED1 = np.array([0, 100, 100])
+    UPPER_RED1 = np.array([10, 255, 255])
+    LOWER_RED2 = np.array([170, 100, 100])
+    UPPER_RED2 = np.array([180, 255, 255])
+    RED_MASK1 = cv2.inRange(hsv, LOWER_RED1, UPPER_RED1)
+    RED_MASK2 = cv2.inRange(hsv, LOWER_RED2, UPPER_RED2)
+    RED_MASK = cv2.addWeighted(RED_MASK1, 1.0, RED_MASK2, 1.0, 0.0)
     
-    if RT_pixel_count > GREEN_PIXEL_THRESHOLD:
-        current_roi_ratio = ROI_RATIO_ROTARY  # 0.25 (넓게 봄)
-        mode_status = "ROTARY (Green)"
-        print(f"Rotary ({RT_pixel_count})")
+    LOWER_BLUE = np.array([100, 150, 0])
+    UPPER_BLUE = np.array([140, 255, 255])
+    BLUE_MASK = cv2.inRange(hsv, LOWER_BLUE, UPPER_BLUE)
+    #======================================
+
+    GREEN_PIXEL_COUNT = cv2.countNonZero(GREEN_MASK)
+    RED_PIXEL_COUNT = cv2.countNonZero(RED_MASK)
+    BLUE_PIXEL_COUNT = cv2.countNonZero(BLUE_MASK)
+
+    if GREEN_PIXEL_COUNT > GREEN_PIXEL_THRESHOLD:
+        print("GREEN detected")
+        return "GREEN"
+    elif RED_PIXEL_COUNT > RED_PIXEL_THRESHOLD:
+        print("RED detected")
+        return "RED"
+    elif BLUE_PIXEL_COUNT > BLUE_PIXEL_THRESHOLD:
+        print("BLUE detected")
+        return "BLUE"
     else:
-        current_roi_ratio = ROI_RATIO_NORMAL  # 0.5 (좁게 봄)
-        mode_status = "NORMAL"
-    return current_roi_ratio, green_mask, RT_pixel_count, mode_status
+        return "NONE"   
+    
+# ============ Rotary ============
+def IsRotary():
+    return ROI_RATIO_ROTARY  # 0.25 (넓게 봄)
         
 # ============ Crosswalk ============
-def IsCrosswalk(hsv, servo, motor):   
-    global CW_Flag
-
-    CW_mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-    CW_mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-    CW_mask = cv2.addWeighted(CW_mask1, 1.0, CW_mask2, 1.0, 0.0)
-
-    # 빨간색 픽셀 개수 세기
-    CW_pixel_count = cv2.countNonZero(CW_mask)
-
-    # 판단 및 제어
-    if CW_pixel_count > CW_THRESHOLD and CW_Flag == 0:
-        CW_Flag = 1
-        print(f"Crosswalk ({CW_pixel_count}) -> Stop")
-        # 일단 정지
-        motor.stop()
-        time.sleep(STOP_TIME)
+def IsCrosswalk(servo, motor):   
+    # 일단 정지
+    motor.stop()
+    time.sleep(STOP_TIME)
         
-        # 탈출
-        motor.forward(speed=BASE_SPEED)
-        servo.angle = SERVO_CENTER_ANGLE
-        time.sleep(BLIND_RUN_TIME)
-        
-    return CW_pixel_count
-                
+    # 탈출
+    motor.forward(speed=BASE_SPEED)
+    servo.angle = SERVO_CENTER_ANGLE
+    time.sleep(BLIND_RUN_TIME)
+
+def Parking():
+    pass
+                       
 # ============ Debug ============
-def View_debug(bird_view, mask, green_mask, roi_top, lane_angle_deg, mode_status, RT_pixel_count, CW_pixel_count):
+def View_debug(bird_view, mask, roi_top, lane_angle_deg, color_status):
     bev_debug = bird_view.copy()
     h, w = bev_debug.shape[:2]
-
-    # 초록색 영역
-    contours, _ = cv2.findContours(green_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cv2.drawContours(bev_debug, contours, -1, (0, 255, 0), 2)
 
     # ROI
     cv2.line(bev_debug, (0, roi_top), (w, roi_top), (0, 0, 255), 3)
     
-    cv2.putText(bev_debug, f"Mode: {mode_status}", (10, 30),
+    cv2.putText(bev_debug, f"Mode: {color_status}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-    cv2.putText(bev_debug, f"Angle: {lane_angle_deg:.1f}", (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-    cv2.putText(bev_debug, f"Green Pixels: {RT_pixel_count}", (10, 90),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-    cv2.putText(bev_debug, f"Red Pixels: {CW_pixel_count}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
     cv2.imshow("Mask", mask)
     cv2.imshow("BEV Debug", bev_debug)
 
@@ -217,31 +214,37 @@ def main():
     picam2, M, servo, motor = Init()
 
     current_roi_ratio = ROI_RATIO_NORMAL
-    mode_status = "NORMAL"
+    CW_Flag = 0
+    #mode_status = "NORMAL"
 
     try:
         while True:
             frame = picam2.capture_array()
-            # frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
             bird_view = cv2.warpPerspective(frame, M, (640, 480))
             hsv = cv2.cvtColor(bird_view, cv2.COLOR_BGR2HSV)
             
-            # ============ 회전 교차로 ============
-            current_roi_ratio, green_mask, RT_pixel_count, mode_status  = IsRotary(hsv)
-            
-            # ============ 횡단보도 ============
-            CW_pixel_count = IsCrosswalk(hsv, servo, motor)
-            #if CW_pixel_count > CW_THRESHOLD:
-            #    continue
-            
-            # ============ 차선 유지 ============
+            # ============ Color Detection ============
+            color_status = Color_Define(hsv)
+            if color_status == "GREEN":
+                current_roi_ratio = IsRotary()
+                
+            elif color_status == "RED" and CW_Flag == 0:
+                IsCrosswalk(servo, motor)
+                CW_Flag = 1
+                continue
+
+            elif color_status == "BLUE":
+                Parking()
+                break
+            else:
+                current_roi_ratio = ROI_RATIO_NORMAL
+
             L_mask = cv2.inRange(hsv, np.array([0,0,0]), np.array([180,255,80]))
-            
             result = get_lane_angle_split(L_mask, current_roi_ratio)
             roi_top, lane_angle_deg = Lane_Drive(result, servo, motor, current_roi_ratio)
 
             # ============ 시각화 ============
-            View_debug(bird_view, L_mask, green_mask, roi_top, lane_angle_deg, mode_status, RT_pixel_count, CW_pixel_count)
+            View_debug(bird_view, L_mask, roi_top, lane_angle_deg, color_status)
             
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
