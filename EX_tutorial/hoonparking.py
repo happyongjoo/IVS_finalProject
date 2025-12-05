@@ -51,6 +51,14 @@ def parking_sequence(servo, motor):
     servo.angle = SERVO_CENTER_ANGLE
     time.sleep(0.5)
 
+     # 2. 핸들 왼쪽 최대 꺾기 (스티어링)
+    print("Steering: Left MAX (0도)")
+    servo.angle = SERVO_MIN_ANGLE
+    time.sleep(0.5) # 서보 반응 대기
+    
+    motor.forward(0.6)
+    time.sleep(0.5) # 서보 반응 대기
+
     # 2. 핸들 왼쪽 최대 꺾기 (스티어링)
     print("Steering: Left MAX (0도)")
     servo.angle = SERVO_MAX_ANGLE
@@ -58,7 +66,7 @@ def parking_sequence(servo, motor):
 
     # 3. 후진 (1초)
     print("Reverse: 1.0 sec")
-    motor.backward(3.0)
+    motor.backward(0.6)
     time.sleep(2.0) # [시간 조절] 후진 시간
 
     # 4. 정지 및 핸들 중앙 정렬
