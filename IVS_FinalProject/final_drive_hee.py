@@ -167,13 +167,10 @@ def Color_Define(hsv):
     BLUE_PIXEL_COUNT = cv2.countNonZero(BLUE_MASK)
 
     if GREEN_PIXEL_COUNT > GREEN_PIXEL_THRESHOLD:
-        print("GREEN detected")
         return "GREEN"
     elif RED_PIXEL_COUNT > RED_PIXEL_THRESHOLD:
-        print("RED detected")
         return "RED"
     elif BLUE_PIXEL_COUNT > BLUE_PIXEL_THRESHOLD:
-        print("BLUE detected")
         return "BLUE"
     else:
         return "NONE"   
@@ -215,7 +212,6 @@ def main():
 
     current_roi_ratio = ROI_RATIO_NORMAL
     CW_Flag = 0
-    #mode_status = "NORMAL"
 
     try:
         while True:
@@ -234,8 +230,8 @@ def main():
                 continue
 
             elif color_status == "BLUE":
-                Parking()
-                break
+                final_parking.parking(servo, motor, frame)
+
             else:
                 current_roi_ratio = ROI_RATIO_NORMAL
 
