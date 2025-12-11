@@ -145,7 +145,7 @@ class GreenLaneFollower:
     
 def parking(servo, motor, frame):
     # from gpiozero import DistanceSensor
-    turning_time = 2.0
+    turning_time = 2.5
     forword_speed = 0.4
     
     target_distance = 20

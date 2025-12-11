@@ -3,9 +3,8 @@ import cv2
 import numpy as np
 import time
 import math
-import final_parking
 
-from gpiozero import AngularServo, Motor
+from gpiozero import AngularServo, Motor, DistanceSensor
 
 # ============ parameter ============
 # 서보모터
@@ -26,7 +25,7 @@ K_ANGLE = 3.0               # 선형 매핑 게인
 MAX_LANE_ANGLE = 60.0            # fitLine 클램핑 기준
 HARD_TURN_THRESHOLD = 45.0       # ±45도 넘으면 최대 조향
 
-ROI_RATIO_NORMAL = 0.6
+ROI_RATIO_NORMAL = 0.5
 ROI_RATIO_ROTARY = 0.25
 
 src_points = np.float32([(40, 50), (0, 280), (640, 280), (600, 50)])
@@ -38,12 +37,14 @@ RED_PIXEL_THRESHOLD = 24000
 BLUE_PIXEL_THRESHOLD = 3000
 
 # 횡단보도
-STOP_TIME = 2.5  # 정지 시간 (초)
+STOP_TIME = 1.5      # 정지 시간 (초)
 BLIND_RUN_TIME = 1.0 # 탈출 직진 시간 (초)
-    
+
 # ============ Init ============
 def Init():
-    picam2 = Picamera2()
+    # CAM1 포트 카메라 사용 (CAM0 쓰고 싶으면 camera_num=0)
+    picam2 = Picamera2(camera_num=1)
+
     sensor_w, sensor_h = picam2.sensor_resolution
     M = cv2.getPerspectiveTransform(src_points, dst_points)
     config = picam2.create_video_configuration(
@@ -52,7 +53,6 @@ def Init():
     )
 
     picam2.configure(config)
-    #picam2.set_controls({"ScalerCrop": (0, 0, sensor_w, sensor_h)})
     picam2.start()
     time.sleep(1)
 
@@ -70,11 +70,12 @@ def Init():
         pwm=True
     )
     motor.stop()
+    time.sleep(2)
     
     return picam2, M, servo, motor
 
+
 # ============ Lane Keeping ============
-# 차선 기울기 계산 함수
 def fit_lane_angle_deg(side_img):
     points = cv2.findNonZero(side_img)
     if points is None or len(points) < 50:
@@ -92,11 +93,9 @@ def fit_lane_angle_deg(side_img):
     angle_deg = max(-MAX_LANE_ANGLE, min(MAX_LANE_ANGLE, angle_deg))
     return angle_deg
 
-# 좌/우 차선 기울기 판별
 def get_lane_angle_split(mask, roi_ratio):
     h, w = mask.shape
 
-    # 동적으로 변하는 비율 적용
     roi_top = int(h * roi_ratio)
     roi = mask[roi_top:h, :]
 
@@ -120,9 +119,8 @@ def get_lane_angle_split(mask, roi_ratio):
 
 def Lane_Drive(result, servo, motor, current_roi_ratio):
     if result is not None and result[0] is not None:
-    # 항상 float 반환됨
         lane_angle_deg, side, roi_top = result
-        # ---- 조향 로직 ----
+
         if lane_angle_deg <= -HARD_TURN_THRESHOLD:
             steering_angle = SERVO_MIN_ANGLE
         elif lane_angle_deg >= HARD_TURN_THRESHOLD:
@@ -137,14 +135,14 @@ def Lane_Drive(result, servo, motor, current_roi_ratio):
     else:
         side = "none"
         roi_top = int(480 * current_roi_ratio)
-        #steering_angle = SERVO_CENTER_ANGLE
         lane_angle_deg = 0
         servo.angle = SERVO_CENTER_ANGLE
         motor.stop()
     return roi_top, lane_angle_deg
 
+
+# ============ Color Detect ============
 def Color_Define(hsv):
-    #=========== Color Define ============
     LOWER_GREEN = np.array([40, 50, 50])
     UPPER_GREEN = np.array([90, 255, 255])
     GREEN_MASK = cv2.inRange(hsv, LOWER_GREEN, UPPER_GREEN)
@@ -160,11 +158,13 @@ def Color_Define(hsv):
     LOWER_BLUE = np.array([100, 150, 0])
     UPPER_BLUE = np.array([140, 255, 255])
     BLUE_MASK = cv2.inRange(hsv, LOWER_BLUE, UPPER_BLUE)
-    #======================================
 
     GREEN_PIXEL_COUNT = cv2.countNonZero(GREEN_MASK)
     RED_PIXEL_COUNT = cv2.countNonZero(RED_MASK)
     BLUE_PIXEL_COUNT = cv2.countNonZero(BLUE_MASK)
+
+    # 디버그용으로 픽셀 수 보고 싶으면 아래 주석 해제
+    # print("G:", GREEN_PIXEL_COUNT, "R:", RED_PIXEL_COUNT, "B:", BLUE_PIXEL_COUNT)
 
     if GREEN_PIXEL_COUNT > GREEN_PIXEL_THRESHOLD:
         return "GREEN"
@@ -174,45 +174,59 @@ def Color_Define(hsv):
         return "BLUE"
     else:
         return "NONE"   
-    
+
+
 # ============ Rotary ============
 def IsRotary():
     return ROI_RATIO_ROTARY  # 0.25 (넓게 봄)
-        
+
+
 # ============ Crosswalk ============
 def IsCrosswalk(servo, motor):   
-    # 일단 정지
     motor.stop()
     time.sleep(STOP_TIME)
         
-    # 탈출
     motor.forward(speed=BASE_SPEED)
     servo.angle = SERVO_CENTER_ANGLE
     time.sleep(BLIND_RUN_TIME)
 
-def Parking():
+
+# ============ Parking ============
+def parking(picam2, servo, motor):
     pass
-                       
+
 # ============ Debug ============
 def View_debug(bird_view, mask, roi_top, lane_angle_deg, color_status):
     bev_debug = bird_view.copy()
     h, w = bev_debug.shape[:2]
 
-    # ROI
     cv2.line(bev_debug, (0, roi_top), (w, roi_top), (0, 0, 255), 3)
     
     cv2.putText(bev_debug, f"Mode: {color_status}", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+    cv2.putText(bev_debug, f"Angle: {lane_angle_deg:.1f}", (10, 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
     cv2.imshow("Mask", mask)
     cv2.imshow("BEV Debug", bev_debug)
+
 
 # ============ main ============
 def main():
     picam2, M, servo, motor = Init()
-
+    
     current_roi_ratio = ROI_RATIO_NORMAL
     CW_Flag = 0
+    Parking_Flag = 0
+    
+    sensor = DistanceSensor(echo = 8, trigger = 11)
+    turning_time = 4.0
+    forward_speed = 0.6
 
+    target_distance = 0.20  
+    distance_count = 0
+    target_count = 50
+    
     try:
         while True:
             frame = picam2.capture_array()
@@ -230,12 +244,29 @@ def main():
                 continue
 
             elif color_status == "BLUE":
-                final_parking.parking(servo, motor, frame)
+                # 파란색 → 주차 모드 진입
+                motor.stop()
+                time.sleep(1)
+                servo.angle = SERVO_MIN_ANGLE
+                time.sleep(1)
+                motor.forward(forward_speed)
+                time.sleep(turning_time)
+                servo.angle = SERVO_CENTER_ANGLE
+                motor.stop()
+                time.sleep(1)
+                #BASE_SPEED = 0.4
+                
+                Parking_Flag = 1
 
+            elif Parking_Flag == 1:
+                dist = sensor.distance
+                print(f"dist: {dist:.2f} m")
+                
             else:
                 current_roi_ratio = ROI_RATIO_NORMAL
 
-            L_mask = cv2.inRange(hsv, np.array([0,0,0]), np.array([180,255,80]))
+            # 기본 차선 인식 (검정 계열 기준)
+            L_mask = cv2.inRange(hsv, np.array([0, 0, 0]), np.array([180, 255, 80]))
             result = get_lane_angle_split(L_mask, current_roi_ratio)
             roi_top, lane_angle_deg = Lane_Drive(result, servo, motor, current_roi_ratio)
 
