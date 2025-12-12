@@ -16,7 +16,7 @@ SERVO_CENTER_ANGLE = 90
 MOTOR_FORWARD_PIN = 14
 MOTOR_BACKWARD_PIN = 15
 MOTOR_ENABLE_PIN = 23
-BASE_SPEED = 0.6
+BASE_SPEED = 0.5
 PARKING_SPEED = 0.4  # 주차 공간 탐색 시 전진 속도
 
 # 초음파 센서 (요청하신 핀 번호 반영)
@@ -28,7 +28,7 @@ K_ANGLE = 3.0
 MAX_LANE_ANGLE = 60.0      
 HARD_TURN_THRESHOLD = 45.0 
 
-ROI_RATIO_NORMAL = 0.5
+ROI_RATIO_NORMAL = 0.55
 ROI_RATIO_ROTARY = 0.25
 
 # 원근 변환 좌표
@@ -165,38 +165,42 @@ def parking_sequence(servo, motor, ultrasonic, picam2):
     # --- 1단계: 공간 탐색 (전진) ---
     print(">>> Searching for space (>= 45cm)...")
    
-    motor.forward(0.5)
+    motor.forward(0.4)
     servo.angle = SERVO_MIN_ANGLE  # 왼쪽 최대
     time.sleep(0.3)  
 
 
     servo.angle = SERVO_CENTER_ANGLE
-    
+    find_count = 0
     while True:
         # 거리 측정 (cm 변환)
         dist_cm = ultrasonic.distance
-        print(f"dist: {dist_cm:.2f} m")
+        print(f"[{find_count}] dist: {dist_cm:.2f} m")
         
         if dist_cm >= 0.30 and dist_cm < 0.60:
-            print(f"Space Found! ({dist_cm:.2f} m) Stopping...")
-            motor.stop()            
-            time.sleep(1.0) # 잠시 대기
-            break
+            find_count += 1
+            
+            if find_count > 250:
+                print("주차 공간 찾음")
+                motor.stop()            
+                time.sleep(1.0) # 잠시 대기
+                break
+        else:
+            find_count = 0
         
-        time.sleep(0.1)
 
     # --- 2단계: 후방 주차 시퀀스 (하드코딩) ---
     # [파라미터 조정 영역] 아래 time.sleep 값을 수정하여 튜닝하세요.
     
-    motor.forward(PARKING_SPEED)
-    time.sleep(1.0)
+    # motor.forward(PARKING_SPEED)
+    # time.sleep(1.0)
 
     # 1. 왼쪽으로 핸들 최대한 꺾고 전진 (차체 비틀기)
     print("1. Left Turn & Forward")
     servo.angle = SERVO_MIN_ANGLE  # 왼쪽 최대
     time.sleep(0.5) # 서보 반응 대기
     motor.forward(PARKING_SPEED)
-    time.sleep(1.5) # [시간 조절] 전진 시간 (차체 각도 만들기)
+    time.sleep(0.8) # [시간 조절] 전진 시간 (차체 각도 만들기)
 
 
     # 2. 핸들 오른쪽 최대 꺾기 (후진 준비)
@@ -209,7 +213,7 @@ def parking_sequence(servo, motor, ultrasonic, picam2):
     # 3. 후진 진입 (주차칸으로 엉덩이 넣기)
     print("3. Reverse into spot")
     motor.backward(PARKING_SPEED)
-    time.sleep(1.9)
+    time.sleep(1.8)
 
     # 4. 정지 및 핸들 중앙 정렬
     print("4. Align Center")
@@ -220,7 +224,7 @@ def parking_sequence(servo, motor, ultrasonic, picam2):
     # 5. 최종 주차 (직진 후진으로 깊숙이)
     print("5. Final Parking")
     motor.backward(PARKING_SPEED)
-    time.sleep(1.2)
+    time.sleep(0.7)
 
     # 6. 종료
     print("=== Parking Completed ===")
@@ -242,7 +246,6 @@ def main():
     picam2, M, servo, motor, ultrasonic = Init()
     current_roi_ratio = ROI_RATIO_NORMAL
     CW_Flag = 0
-    Rotary_Flag = 0
 
     try:
         while True:
@@ -253,10 +256,8 @@ def main():
             # ============ Color Detection ============
             color_status = Color_Define(hsv)
             
-            if color_status == "GREEN" and Rotary_Flag == 0:
+            if color_status == "GREEN":
                 current_roi_ratio = IsRotary()
-                Rotary_Flag = 1
-                continue 
                 
             elif color_status == "RED" and CW_Flag == 0:
                 IsCrosswalk(servo, motor)
